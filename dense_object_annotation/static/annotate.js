@@ -1,7 +1,7 @@
 $( function() {
 
     // The detailed image corresponds to 25% of the smaller side of the original image
-    const ZOOM_LEVEL = 0.25;
+    const ZOOM_LEVEL = 1;
 
     let rawImageSize;
     let cx, cy, imageScaleRatio;

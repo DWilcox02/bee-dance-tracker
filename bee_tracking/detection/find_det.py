@@ -1,3 +1,5 @@
+# find_det.py
+
 import os
 import tensorflow as tf
 from keras import layers, Model
@@ -57,8 +59,11 @@ def process_detections(output, offs, cur_fr):
 
 
 class DetectionInference:
+
     def __init__(self):
+        # Initialize with correct channel dimensions
         self.batch_data = np.zeros((BATCH_SIZE, DS, DS, 1), dtype=np.float32)
+        self.prior_data = np.zeros((BATCH_SIZE, DS, DS, NUM_FILTERS), dtype=np.float32)
 
     def __enter__(self):
         return self
@@ -66,9 +71,10 @@ class DetectionInference:
     def __exit__(self, exc_type, exc_value, traceback):
         None
 
-    def load_tf1_weights(self, checkpoint_file):
+    def load_tf1_weights(self, checkpoint_prefix):
+        """Load weights from TF1 checkpoint."""
         weight_dict = {}
-        reader = tf.train.load_checkpoint(checkpoint_file)
+        reader = tf.train.load_checkpoint(checkpoint_prefix)
         var_to_shape_map = reader.get_variable_to_shape_map()
 
         for key in var_to_shape_map:
@@ -86,35 +92,66 @@ class DetectionInference:
     def build_model(self, checkpoint_dir):
         self.is_train = False
 
+        # Define inputs with correct shapes
         self.input_img = layers.Input(shape=(DS, DS, 1), batch_size=BATCH_SIZE, name="images")
         self.input_prior = layers.Input(shape=(DS, DS, NUM_FILTERS), batch_size=BATCH_SIZE, name="prior")
 
+        # Get outputs directly using create_unet2
         logits, last_relu, angle_pred = unet.create_unet2(
-            NUM_LAYERS, NUM_FILTERS, self.input_img, self.is_train, prev=self.input_prior, classes=CLASSES
+            NUM_LAYERS, 
+            NUM_FILTERS, 
+            self.input_img, 
+            self.is_train, 
+            prev=self.input_prior, 
+            classes=CLASSES
         )
 
         self.model = Model(
-            inputs={"images": self.input_img, "prior": self.input_prior}, outputs=[logits, angle_pred, last_relu]
+            inputs={"images": self.input_img, "prior": self.input_prior},
+            outputs=[logits, angle_pred, last_relu]
         )
-
+        # Find latest checkpoint number
         checkpoint_nb = func.find_last_checkpoint(checkpoint_dir)
-        checkpoint_file = os.path.join(checkpoint_dir, f"model_{checkpoint_nb:06d}.ckpt")
-        print(f"Restoring checkpoint {checkpoint_nb}..", flush=True)
+        # TODO: Remove later
+        checkpoint_nb = 20
+
+        # Construct checkpoint prefix (without .index or .data-* suffix)
+        checkpoint_prefix = os.path.join(checkpoint_dir, f"ckpt-{checkpoint_nb}")
+
+        print(f"Restoring checkpoint {checkpoint_nb} from {checkpoint_prefix}..", flush=True)
 
         try:
-            self.model.load_weights(checkpoint_file)
-        except ValueError:
-            print("Converting TF1 checkpoint to Keras format...")
-            weight_dict = self.load_tf1_weights(checkpoint_file)
+            # Verify checkpoint files exist
+            if not os.path.exists(f"{checkpoint_prefix}.index"):
+                raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_prefix}.index")
 
-            for layer in self.model.layers:
-                layer_name = layer.name
-                if layer_name in weight_dict:
-                    layer.set_weights([weight_dict[layer_name]])
+            # Try loading the checkpoint directly
+            self.model.load_weights(checkpoint_prefix)
+            print("Successfully loaded checkpoint weights")
 
-            keras_checkpoint_file = os.path.join(checkpoint_dir, f"model_{checkpoint_nb:06d}.weights.h5")
-            self.model.save_weights(keras_checkpoint_file)
-            print(f"Saved converted weights to {keras_checkpoint_file}")
+        except (ValueError, tf.errors.NotFoundError) as e:
+            print(f"Error loading checkpoint directly: {e}")
+            print("Attempting to convert TF1 checkpoint to Keras format...")
+
+            try:
+                weight_dict = self.load_tf1_weights(checkpoint_prefix)
+
+                for layer in self.model.layers:
+                    layer_name = layer.name
+                    if layer_name in weight_dict:
+                        layer.set_weights([weight_dict[layer_name]])
+
+                # Save in Keras format
+                keras_checkpoint_file = os.path.join(checkpoint_dir, f"ckpt-{checkpoint_nb:06d}.weights.h5")
+                self.model.save_weights(keras_checkpoint_file)
+                print(f"Saved converted weights to {keras_checkpoint_file}")
+
+            except Exception as e:
+                print(f"Error converting checkpoint: {e}")
+                print("\nExpected checkpoint files:")
+                print(f"- {checkpoint_prefix}.index")
+                print(f"- {checkpoint_prefix}.data-00000-of-00001")
+                raise
 
     def _feed_dict(self, offs, cur_fr, priors):
         img = func.read_img(cur_fr, IMG_DIR)
@@ -125,7 +162,11 @@ class DetectionInference:
             else:
                 self.batch_data[batch_i, :, :, :] = 0
 
-        return {"images": self.batch_data, "prior": priors}
+        # Ensure priors have correct shape
+        if priors.shape != (BATCH_SIZE, DS, DS, NUM_FILTERS):
+            raise ValueError(f"Prior shape mismatch. Expected {(BATCH_SIZE, DS, DS, NUM_FILTERS)}, got {priors.shape}")
+
+        return {"images": self.batch_data.astype(np.float32), "prior": priors.astype(np.float32)}
 
     def _load_offs_for_run(self, offsets, start_i):
         res = []
@@ -134,6 +175,7 @@ class DetectionInference:
             res.append((off_x, off_y))
             start_i = start_i + 1
         return res, start_i
+
 
     def run_inference(self, fls, offsets, start_off_i=0):
         t1 = time.time()
@@ -163,14 +205,12 @@ class DetectionInference:
                     num_bees = process_detections(detection_output, run_offs, cur_fr)
                     total_bees += num_bees
 
-                    # Update priors for next iteration
-                    last_priors = outs[2]
+                    # Update priors for next iteration - ensure correct shape
+                    last_priors = outs[2]  # This should now have the correct shape
 
                     output_i += 1
                     pbar.update(1)
-                    pbar.set_postfix(
-                        {"frame": f"{cur_fr + 1}/{len(fls)}", "run": f"{i + 1}/{n_runs}", "bees": num_bees}
-                    )
+                    pbar.set_postfix({"frame": f"{cur_fr + 1}/{len(fls)}", "run": f"{i + 1}/{n_runs}", "bees": num_bees})
 
         elapsed_mins = (time.time() - t1) / 60
         print(f"\nProcessing complete!")

@@ -209,10 +209,7 @@ def plot_detections(fr, save, fps=10):
     draw = ImageDraw.Draw(img)
     all_bees = np.loadtxt(os.path.join(POS_DIR, "%06d.txt" % fr), delimiter=',', ndmin=2).astype(int)
 
-    print(f"frame {fr} has {all_bees.shape[0]} bees")
-
     for i in range(all_bees.shape[0]):
-        print(f"bee {i} at {all_bees[i, 0]}, {all_bees[i, 1]}")
         x, y = all_bees[i, 0], all_bees[i, 1]
         if all_bees[i, 2] == 1:
             add_circle(draw, x, y, OTHER_BEE_COL)

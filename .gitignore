@@ -166,3 +166,9 @@ cython_debug/
 **/.DS_Store
 
 */data
+
+*/node_modules
+
+dense_object_annotation/static
+
+*/package-lock.json

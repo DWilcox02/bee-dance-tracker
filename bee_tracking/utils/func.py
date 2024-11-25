@@ -21,10 +21,30 @@ NUM_LAYERS = 3
 NUM_FILTERS = 32
 CLASSES = 3
 
-def find_last_checkpoint(path):
-    files = [f for f in os.listdir(path) if re.search('index$', f)]
-    nbs = map(lambda s: int(re.match(r'model_([0-9]+)\.ckpt\.index', s).group(1)), files)
-    return max(nbs)
+
+def find_last_checkpoint(checkpoint_dir):
+    """Find the latest checkpoint number in the directory by looking for .index files."""
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith(".index")]
+    if not checkpoint_files:
+        raise FileNotFoundError(f"No checkpoint files found in {checkpoint_dir}")
+
+    # Extract checkpoint numbers from filenames like 'ckpt-000123.index'
+    checkpoint_numbers = []
+    for filename in checkpoint_files:
+        try:
+            # Handle both 'ckpt-000123.index' and potential legacy 'model_000123.ckpt.index'
+            if filename.startswith("ckpt-"):
+                num = int(filename.split(".")[0].split("-")[1])
+            else:
+                num = int(filename.split("_")[1].split(".")[0])
+            checkpoint_numbers.append(num)
+        except (IndexError, ValueError):
+            continue
+
+    if not checkpoint_numbers:
+        raise ValueError(f"No valid checkpoint numbers found in {checkpoint_dir}")
+
+    return max(checkpoint_numbers)
 
 
 def find_devices():
