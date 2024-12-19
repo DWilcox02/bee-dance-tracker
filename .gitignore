@@ -166,6 +166,7 @@ cython_debug/
 **/.DS_Store
 
 */data
+*/data_og
 
 */node_modules
 
