@@ -12,4 +12,7 @@ Running `python 3.11.10`. Updates made to fix Keras 3 compatibility.
     - Associated Annotation Repo: https://github.com/oist/DenseObjectAnnotation
 
 
+2. Kongsilp, P., Taetragool, U. & Duangphakdee, O. Individual honey bee tracking in a beehive environment using deep learning and Kalman filter. Sci Rep 14, 1061 (2024). https://doi.org/10.1038/s41598-023-44718-y
+
+
 This project includes code licensed under GPL-3.0 from [Original Repository](https://github.com/username/repository).
